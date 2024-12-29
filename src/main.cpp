@@ -343,213 +343,217 @@ void loop()
  ***********************************************************************/
 bool wifi_config(bool upload_flag)
 {
+    wm.setConfigPortalTimeout(300); // sets timeout before AP,webserver loop ends and exits even if there has been no setup.
     if (upload_flag)
     {
-        Serial.println("\tInfo: Wifi config ...");
-        mcu.TickBuildinLED(0.1);
-
-        file = SPIFFS.open("/wifi.conf");
-        if (!file)
+      Serial.println("\tInfo: Wifi config ...");
+      mcu.TickBuildinLED(0.1);
+  
+      file = SPIFFS.open("/wifi.conf");
+      if (!file)
+      {
+        Serial.println("Error: Failed to open File 'wifi.config'");
+        return false;
+      }
+      else
+      {
+        //---All wifi list */
+        String _json_rawFile = getdataFile(SPIFFS, "/wifi.conf");
+        String _json_string = "{\"wifi\": [";
+        _json_string += _json_rawFile;
+        _json_string += "]}";
+        DeserializationError _error = deserializeJson(doc1, _json_string);
+  
+        //---latest wifi */
+        String _json_rawFile2 = getdataFile(SPIFFS, "/wifi_latest.conf");
+        String _json_string2 = "{\"wifi\": [";
+        _json_string2 += _json_rawFile2;
+        _json_string2 += "]}";
+        DeserializationError _error2 = deserializeJson(doc2, _json_string2);
+  
+        if (_error)
         {
-            Serial.println("Error: Failed to open file 'wifi.config'");
-            return false;
+          Serial.printf("Error: deserializeJson() failed: %s", _error.c_str());
+          return false;
+        }
+        else if (_error2)
+        {
+          Serial.printf("Error: deserializeJson() failed: %s", _error2.c_str());
+          return false;
         }
         else
         {
-            /* All wifi list */
-            String _json_rawFile = getdataFile(SPIFFS, "/wifi.conf");
-            String _json_string = "{\"wifi\": [";
-            _json_string += _json_rawFile;
-            _json_string += "]}";
-            DeserializationError _error = deserializeJson(doc1, _json_string);
-
-            /* latest wifi */
-            String _json_rawFile2 = getdataFile(SPIFFS, "/wifi_latest.conf");
-            String _json_string2 = "{\"wifi\": [";
-            _json_string2 += _json_rawFile2;
-            _json_string2 += "]}";
-            DeserializationError _error2 = deserializeJson(doc2, _json_string2);
-
-            if (_error)
+          bool _wifiConnected = false; // ตัวแปรตรวจสอบการเช่ือมต่อ WiFi
+  
+          //---แสดงค่า WiFi list ทั้งหมด */
+          Serial.printf("\r\nInfo: All WiFi list =>\r\n");
+          size_t _json_data_size = serializeJsonPretty(doc1, Serial);
+          Serial.println("\r\n");
+          Serial.printf("Info: Data Size => %d bytes\r\n", _json_data_size);
+          int _json_data_number = doc1["wifi"].size();
+          Serial.printf("Info: Number of WiFi list => %d\r\n\r\n", _json_data_number);
+  
+          //---แสดงค่า WiFi ล่าสุดที่เชื่อมต่อ */
+          Serial.printf("\r\nInfo: Latest WiFi =>\r\n");
+          size_t _json_data_size2 = serializeJsonPretty(doc2, Serial);
+          int _json_data_number2 = doc2["wifi"].size();
+          Serial.println("\r\n");
+  
+          //---เชื่อมต่อกับ WiFi ตัวล่าสุด */
+          String _ssid_string2 = doc2["wifi"][0]["ssid"];
+          String _pass_string2 = doc2["wifi"][0]["pass"];
+          char _ssid_char2[30];
+          char _pass_char2[30];
+          _ssid_string2.toCharArray(_ssid_char2, _ssid_string2.length() + 1);
+          _pass_string2.toCharArray(_pass_char2, _pass_string2.length() + 1);
+          Serial.printf("Info: WiFi Connecting to.. \r\n");
+          Serial.printf("ssid[latest]: %s\r\n", _ssid_char2);
+          Serial.printf("password[latest]: %s\r\n", _pass_char2);
+          uint8_t _timeoutCount2 = 0;
+          Serial.printf("");
+  
+          // check emtry ssid and password from config File
+          bool _hasNull = false;
+          for (int i = 0;; ++i)
+          {
+            if (_ssid_char2[0] == '\0')
             {
-                Serial.printf("Error: deserializeJson() failed: %s", _error.c_str());
+              _hasNull = true;
+              break;
+            }
+          }
+  
+          if (_hasNull)
+          {
+            WiFi.begin(_ssid_char2, _pass_char2); // ทำการเชื่อมต่อ WiFi ตัวล่าสุด
+            while ((WiFi.status() != WL_CONNECTED) && (_timeoutCount2 < WIFI_TIMEOUT))
+            {
+              delay(1000);
+              Serial.print(".");
+              _timeoutCount2++;
+            }
+          }
+  
+          if ((WiFi.status() == WL_CONNECTED)) // เชื่อมต่อ WiFi ตัวล่าสุดสำเร็จ
+          {
+            Serial.println("\n\rWiFi connected");
+            Serial.print("IP address: ");
+            Serial.println(WiFi.localIP());
+            Serial.printf("SSID: %s\r\n", WiFi.SSID().c_str());
+            Serial.printf("RSSI: %d\r\n", WiFi.RSSI());
+            _wifiConnected = true;
+            mcu.TickBuildinLED(1.0);
+            return true;
+          }
+          else // พยายามเชื่อมต่อ WiFi ที่อยู่ใน list ของไฟล์ 'wifi.conf'
+          {
+            Serial.println();
+            Serial.printf("Info: WiFi Connecting to \r\n");
+            for (int i = 0; i < _json_data_number; i++)
+            {
+              String _ssid_string = doc1["wifi"][i]["ssid"];
+              String _pass_string = doc1["wifi"][i]["pass"];
+              char _ssid_char[30];
+              char _pass_char[30];
+              _ssid_string.toCharArray(_ssid_char, _ssid_string.length() + 1);
+              _pass_string.toCharArray(_pass_char, _pass_string.length() + 1);
+              Serial.printf("ssid[%d]: %s\r\n", i, _ssid_char);
+              Serial.printf("password[%d]: %s\r\n", i, _pass_char);
+              WiFi.begin(_ssid_char, _pass_char);
+              uint8_t _timeoutCount = 0;
+              Serial.printf("");
+              while ((WiFi.status() != WL_CONNECTED) && (_timeoutCount < WIFI_TIMEOUT))
+              {
+                delay(1000);
+                Serial.print(".");
+                _timeoutCount++;
+              }
+  
+              if (WiFi.status() == WL_CONNECTED)
+              {
+                Serial.println("\n\rWiFi connected");
+                Serial.print("IP address: ");
+                Serial.println(WiFi.localIP());
+                Serial.printf("SSID: %s\r\n", WiFi.SSID().c_str());
+                Serial.printf("RSSI: %d\r\n", WiFi.RSSI());
+           
+  
+                // record latest wifi to 'wifi_latest.conf'
+                String _json_OverwriteFile = "";
+                _json_OverwriteFile += "{";
+                _json_OverwriteFile += "\"ssid\":\"" + wm.getWiFiSSID() + "\",";
+                _json_OverwriteFile += "\"pass\":\"" + wm.getWiFiPass() + "\"";
+                _json_OverwriteFile += "}";
+                writeFile(SPIFFS, "/wifi_latest.conf", _json_OverwriteFile.c_str());
+  
+                _wifiConnected = true;
+                mcu.TickBuildinLED(1.0);
+                // break;
+                return true;
+              }
+            }
+  
+            //---ถ้าไม่มีการเชื่อมต่อ WiFi จะเข้าสู่ AP Mode สำหรับเชื่อมต่อ และบันทึกค่า WiFi */
+            if (!_wifiConnected)
+            {
+  
+              Serial.println("Info:  WiFP AP Mode .... ");
+              Serial.printf("Info:  connect to SSID: %s\r\n", unit);
+              mcu.buzzer_beep(3);
+              vTaskDelay(1000);
+  
+              // wm.setConfigPortalTimeout(300); // sets timeout before AP,webserver loop ends and exits even if there has been no setup.
+              if (wm.autoConnect(unit, "password"))
+              {
+                Serial.printf("Success to connected\r\n");
+                Serial.print("IP address: ");
+                Serial.println(WiFi.localIP());
+                Serial.printf("SSID: %s\r\n", WiFi.SSID().c_str());
+                Serial.printf("RSSI: %d\r\n", WiFi.RSSI());
+  
+                //---record ssid and password to 'wifi.conf' */
+                String _json_appendFile = "";
+                if (_json_data_number == 0)
+                {
+                  _json_appendFile += "{";
+                }
+                else
+                {
+                  _json_appendFile += ",{";
+                }
+                _json_appendFile += "\"ssid\":\"" + wm.getWiFiSSID() + "\",";
+                _json_appendFile += "\"pass\":\"" + wm.getWiFiPass() + "\"";
+                _json_appendFile += "}";
+                appendFile(SPIFFS, "/wifi.conf", _json_appendFile.c_str());
+  
+                //---record latest wifi to 'wifi_latest.conf' ---/
+                String _json_OverwriteFile = "";
+                _json_OverwriteFile += "{";
+                _json_OverwriteFile += "\"ssid\":\"" + wm.getWiFiSSID() + "\",";
+                _json_OverwriteFile += "\"pass\":\"" + wm.getWiFiPass() + "\"";
+                _json_OverwriteFile += "}";
+                writeFile(SPIFFS, "/wifi_latest.conf", _json_OverwriteFile.c_str());
+  
+                mcu.TickBuildinLED(1.0);
+                return true;
+              }
+              else
+              {
+                Serial.println("Error: Failed to connect wifi");
+                Serial.println("System is resetting");
+                mcu.buzzer_beep(3);
+                // ESP.restart();
                 return false;
+              }
             }
-            else if (_error2)
-            {
-                Serial.printf("Error: deserializeJson() failed: %s", _error2.c_str());
-                return false;
-            }
-            else
-            {
-                bool _wifiConnected = false; // ตัวแปรตรวจสอบการเช่ือมต่อ WiFi
-
-                /* แสดงค่า WiFi list ทั้งหมด */
-                Serial.printf("Info: All WiFi list =>\r\n");
-                size_t _json_data_size = serializeJsonPretty(doc1, Serial);
-                Serial.println("\r\n");
-                Serial.printf("Info: Data Size => %d bytes\r\n", _json_data_size);
-                int _json_data_number = doc1["wifi"].size();
-                Serial.printf("Info: Number of WiFi list => %d\r\n\r\n", _json_data_number);
-
-                Serial.println("----------------");
-
-                /* แสดงค่า WiFi ล่าสุดที่เชื่อมต่อ */
-                Serial.printf("\r\nInfo: Latest WiFi =>\r\n");
-                size_t _json_data_size2 = serializeJsonPretty(doc2, Serial);
-                int _json_data_number2 = doc2["wifi"].size();
-                Serial.println("\r\n");
-
-                /* เชื่อมต่อกับ WiFi ตัวล่าสุด */
-                String _ssid_string2 = doc2["wifi"][0]["ssid"];
-                String _pass_string2 = doc2["wifi"][0]["pass"];
-                char _ssid_char2[30];
-                char _pass_char2[30];
-                _ssid_string2.toCharArray(_ssid_char2, _ssid_string2.length() + 1);
-                _pass_string2.toCharArray(_pass_char2, _pass_string2.length() + 1);
-                Serial.printf("Info: WiFi(latest) Connecting to \r\n");
-                Serial.printf("ssid[latest]: %s\r\n", _ssid_char2);
-                Serial.printf("password[latest]: %s\r\n", _pass_char2);
-                uint8_t _timeoutCount2 = 0;
-                Serial.printf("");
-
-                // check emtry ssid and password from config file
-                bool _hasNull = false;
-                for (int i = 0;; ++i)
-                {
-                    if (_ssid_char2[i] == '\0')
-                    {
-                        _hasNull = true;
-                        break;
-                    }
-                }
-
-                if (_hasNull)
-                {
-                    WiFi.begin(_ssid_char2, _pass_char2); // ทำการเชื่อมต่อ WiFi ตัวล่าสุด
-                    while ((WiFi.status() != WL_CONNECTED) && (_timeoutCount2 < WIFI_TIMEOUT))
-                    {
-                        delay(1000);
-                        Serial.print(".");
-                        _timeoutCount2++;
-                    }
-                }
-
-                if ((WiFi.status() == WL_CONNECTED)) // เชื่อมต่อ WiFi ตัวล่าสุดสำเร็จ
-                {
-                    Serial.println("\n\rWiFi connected");
-                    Serial.print("IP address: ");
-                    Serial.println(WiFi.localIP());
-                    Serial.printf("SSID: %s\r\n", WiFi.SSID().c_str());
-                    Serial.printf("RSSI: %d\r\n", WiFi.RSSI());
-                    _wifiConnected = true;
-                    mcu.TickBuildinLED(1.0);
-                    return true;
-                }
-                else // พยายามเชื่อมต่อ WiFi ที่อยู่ใน list ของไฟล์ 'wifi.conf'
-                {
-                    Serial.println();
-                    Serial.printf("Info: WiFi Connecting to \r\n");
-                    for (int i = 0; i < _json_data_number; i++)
-                    {
-                        String _ssid_string = doc1["wifi"][i]["ssid"];
-                        String _pass_string = doc1["wifi"][i]["pass"];
-                        char _ssid_char[30];
-                        char _pass_char[30];
-                        _ssid_string.toCharArray(_ssid_char, _ssid_string.length() + 1);
-                        _pass_string.toCharArray(_pass_char, _pass_string.length() + 1);
-                        Serial.printf("ssid[%d]: %s\r\n", i, _ssid_char);
-                        Serial.printf("password[%d]: %s\r\n", i, _pass_char);
-                        WiFi.begin(_ssid_char, _pass_char);
-                        uint8_t _timeoutCount = 0;
-                        Serial.printf("");
-                        while ((WiFi.status() != WL_CONNECTED) && (_timeoutCount < WIFI_TIMEOUT))
-                        {
-                            delay(1000);
-                            Serial.print(".");
-                            _timeoutCount++;
-                        }
-
-                        if (WiFi.status() == WL_CONNECTED)
-                        {
-                            Serial.println("\n\rWiFi connected");
-                            Serial.print("IP address: ");
-                            Serial.println(WiFi.localIP());
-                            Serial.printf("SSID: %s\r\n", WiFi.SSID().c_str());
-                            Serial.printf("RSSI: %d\r\n", WiFi.RSSI());
-                            _wifiConnected = true;
-
-                            // record latest wifi to 'wifi_latest.conf'
-                            String _json_OverwriteFile = "";
-                            _json_OverwriteFile += "{";
-                            _json_OverwriteFile += "\"ssid\":\"" + wm.getWiFiSSID() + "\",";
-                            _json_OverwriteFile += "\"pass\":\"" + wm.getWiFiPass() + "\"";
-                            _json_OverwriteFile += "}";
-                            writeFile(SPIFFS, "/wifi_latest.conf", _json_OverwriteFile.c_str());
-
-                            _wifiConnected = true;
-                            mcu.TickBuildinLED(1.0);
-                            // break;
-                            return true;
-                        }
-                    }
-
-                    /* ถ้าไม่มีการเชื่อมต่อ WiFi จะเข้าสู่ AP Mode สำหรับเชื่อมต่อ และบันทึกค่า WiFi */
-                    if (!_wifiConnected)
-                    {
-
-                        wm.setConfigPortalTimeout(300); // sets timeout before AP,webserver loop ends and exits even if there has been no setup.
-                        if (wm.autoConnect(unit, "password"))
-                        {
-                            Serial.printf("Success to connected\r\n");
-                            Serial.print("IP address: ");
-                            Serial.println(WiFi.localIP());
-                            Serial.printf("SSID: %s\r\n", WiFi.SSID().c_str());
-                            Serial.printf("RSSI: %d\r\n", WiFi.RSSI());
-
-                            /* record ssid and password to 'wifi.conf' */
-                            String _json_appendFile = "";
-                            if (_json_data_number == 0)
-                            {
-                                _json_appendFile += "{";
-                            }
-                            else
-                            {
-                                _json_appendFile += ",{";
-                            }
-                            _json_appendFile += "\"ssid\":\"" + wm.getWiFiSSID() + "\",";
-                            _json_appendFile += "\"pass\":\"" + wm.getWiFiPass() + "\"";
-                            _json_appendFile += "}";
-                            appendFile(SPIFFS, "/wifi.conf", _json_appendFile.c_str());
-
-                            /* record latest wifi to 'wifi_latest.conf' */
-                            String _json_OverwriteFile = "";
-                            _json_OverwriteFile += "{";
-                            _json_OverwriteFile += "\"ssid\":\"" + wm.getWiFiSSID() + "\",";
-                            _json_OverwriteFile += "\"pass\":\"" + wm.getWiFiPass() + "\"";
-                            _json_OverwriteFile += "}";
-                            writeFile(SPIFFS, "/wifi_latest.conf", _json_OverwriteFile.c_str());
-
-                            mcu.TickBuildinLED(1.0);
-                            return true;
-                        }
-                        else
-                        {
-                            Serial.println("Error: Failed to connect wifi");
-                            Serial.println("System is resetting");
-                            mcu.buzzer_beep(3);
-                            // ESP.restart();
-                            return false;
-                        }
-                    }
-                }
-            }
+          }
         }
+      }
     }
     else
     {
-        Serial.printf("\tInfo: No wifi config");
-        return false;
+      Serial.printf("\tInfo: No wifi config");
+      return false;
     }
     return true;
 }
