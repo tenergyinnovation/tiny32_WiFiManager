@@ -16,8 +16,13 @@ git clone $REPO_URL1
 git clone $REPO_URL2
 git clone $REPO_URL3
 
+# Clone Debounce library to specific location in tiny32_v3
+echo "Cloning Debounce library to tiny32_v3/src/Debounce..."
+cd tiny32_v3/src || exit
+git clone "https://github.com/wkoch/Debounce.git"
+cd ../../
 
-
+echo "Repositories cloned successfully."
 echo "****************************"
 echo "* Success run clone script *"
 echo "****************************"
